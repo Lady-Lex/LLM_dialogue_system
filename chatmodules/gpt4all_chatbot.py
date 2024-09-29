@@ -15,6 +15,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
+# Define the system prompt
 GIVEN_NAME = "Murph"
 
 PREFIX = f"""{GIVEN_NAME} is a large language model trained by nomic-ai.
@@ -75,11 +76,13 @@ class GPT4AllChatbot:
         memory.clear()
 
     def exit(self):
+        # if we don't delete the chain and llm objects manually, the memory and GPU memory may not be released
         del self.chain
         del self.llm
 
 
 if __name__ == '__main__':
+    # excecute the chatbot and chat in the terminal
     models_dir_prefix = "../models/"
 
     model_info_str = "Available models: \n" + ", \n".join([f"{i}: {model}" for i, model in enumerate(os.listdir(models_dir_prefix))])
