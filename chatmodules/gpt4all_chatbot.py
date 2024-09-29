@@ -36,7 +36,8 @@ prompt = ChatPromptTemplate.from_messages(
     [
         system_prompt,
         MessagesPlaceholder(variable_name="chat_history"),
-        HumanMessagePromptTemplate.from_template("{question}")
+        # HumanMessagePromptTemplate.from_template("{question}")
+        HumanMessagePromptTemplate.from_template("Question: {question}\n\nPlease answer directly and don't say anything as Human. \nAnswer:")
     ]
 )
 
@@ -55,7 +56,9 @@ class GPT4AllChatbot:
 
     def get_response(self, dialogue_list):
         result = self.chain.invoke({"question": dialogue_list[-1]})
-        result_content = self.extract_response(result["chat_history"][-1].content)
+        # print(result)
+        # result_content = self.extract_response(result["chat_history"][-1].content)
+        result_content = result["chat_history"][-1].content
         return result_content
 
     def extract_response(self, text):
