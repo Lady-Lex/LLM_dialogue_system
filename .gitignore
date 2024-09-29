@@ -1,0 +1,90 @@
+# Python 缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 虚拟环境
+venv/
+env/
+ENV/
+venv.bak/
+env.bak/
+
+# 编辑器或 IDE 产生的文件
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# 日志和数据库文件
+*.log
+*.sqlite3
+*.db
+
+# 单元测试
+.pytest_cache/
+.tox/
+nosetests.xml
+coverage.xml
+htmlcov/
+*.cover
+.hypothesis/
+
+# 分发/打包
+build/
+dist/
+eggs/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 资料库生成的文件
+.eggs/
+
+# Sphinx 文档
+docs/_build/
+
+# Jupyter Notebook 检查点
+.ipynb_checkpoints
+
+# mypy 类型检查
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre 类型检查
+.pyre/
+
+# 本地配置文件
+local_settings.py
+settings_local.py
+
+# MacOS 系统文件
+.DS_Store
+
+# 锁文件
+Pipfile.lock
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Pylint
+pylint-report.txt
+
+# 环境变量文件
+.env
+.env.*
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
+*~
+
+# 静态文件
+staticfiles/
+media/
+
+# Docker
+*.stackdump
