@@ -65,7 +65,7 @@ class MainWindow(QtWidgets.QMainWindow):
         old_text = self.dialogueTextEdit.toPlainText()
 
         if self.current_model_name != chosen_model:
-            self.dialogueTextEdit.setPlainText(old_text + "Chosen model changed to: " + chosen_model + ". Loadinging..." + "\n\n")
+            self.dialogueTextEdit.setPlainText(old_text + "Chosen model changed to: " + chosen_model + ". Loading..." + "\n\n")
 
             self.current_model_name = chosen_model
             if chosen_model != self.repeater_model_name:
