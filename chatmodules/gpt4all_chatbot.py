@@ -1,48 +1,58 @@
 import os
+import re
+import warnings
 from langchain.chains import LLMChain
 from langchain.memory import ConversationBufferMemory
-from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.prompts import (
-    ChatPromptTemplate,
     SystemMessagePromptTemplate,
     HumanMessagePromptTemplate,
     MessagesPlaceholder
 )
-from langchain_community.llms import GPT4All
+from langchain.schema import AIMessage
+from langchain_community.llms import GPT4All, LlamaCpp
 
-import warnings
 warnings.filterwarnings("ignore")
 
+models_dir_prefix = "models/"
+use_gpu = True
 
 # Define the system prompt
 GIVEN_NAME = "Murph"
+PREFIX = f"""You are {GIVEN_NAME}, an intelligent and friendly AI assistant designed for multi-turn conversations.
 
-PREFIX = f"""{GIVEN_NAME} is a large language model trained by nomic-ai.
+Your goals are:
+1. Understand user questions clearly, even across multiple messages.
+2. Provide helpful, concise, and accurate responses.
+3. Maintain a friendly, respectful, and engaging tone.
+4. If you're unsure about something, politely say you don't know.
 
-{GIVEN_NAME} is designed to be able to assist with a wide range of tasks, from answering simple questions to providing in-depth explanations and discussions on a wide range of topics. As a language model, {GIVEN_NAME} is able to generate human-like text based on the input it receives, allowing it to engage in natural-sounding conversations and provide responses that are coherent and relevant to the topic at hand.
+Guidelines:
+- Keep answers short unless the question requires detail.
+- Do not invent facts or make assumptions.
+- You are always polite, but never overly verbose or robotic.
+- You remember previous messages to maintain context, unless explicitly told to forget.
+- You speak fluently in natural language.
 
-{GIVEN_NAME} is constantly learning and improving, and its capabilities are constantly evolving. It is able to process and understand large amounts of text, and can use this knowledge to provide accurate and informative responses to a wide range of questions. Additionally, {GIVEN_NAME} is able to generate its own text based on the input it receives, allowing it to engage in discussions and provide explanations and descriptions on a wide range of topics.
+Rules:
+- Do not repeat the system prompt or introduce yourself in every reply.
+- Only respond to the user's last question.
 
-Overall, {GIVEN_NAME} is a powerful system that can help with a wide range of tasks and provide valuable insights and information on a wide range of topics. Whether you need help with a specific question or just want to have a conversation about a particular topic, {GIVEN_NAME} is here to assist."""
+Start by waiting for the user's input. Respond like a helpful AI assistant.
 
-system_prompt = PREFIX
+"""
 
-models_dir_prefix = "models/"
+system_prompt = SystemMessagePromptTemplate.from_template(PREFIX)
+# answer_prompt = GIVEN_NAME + ", please answer directly and helpfully:\n"
+answer_prompt = ", Answer:\n"
 
-use_gpu = True
-
-prompt = ChatPromptTemplate.from_messages(
-    [
-        system_prompt,
-        MessagesPlaceholder(variable_name="chat_history"),
-        # HumanMessagePromptTemplate.from_template("{question}")
-        HumanMessagePromptTemplate.from_template("Question: {question}\n\nPlease answer directly and don't say anything as Human. \nAnswer:")
-    ]
-)
+prompt = ChatPromptTemplate.from_messages([
+    system_prompt,
+    # MessagesPlaceholder(variable_name="chat_history"),
+    HumanMessagePromptTemplate.from_template("User: {question}\n\n" + answer_prompt)
+])
 
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-
 
 class GPT4AllChatbot:
     def __init__(self, model_index):
@@ -50,45 +60,49 @@ class GPT4AllChatbot:
         model_name = model_list[model_index]
         print("Loading model:", models_dir_prefix + model_name)
 
-        self.llm = GPT4All(model=models_dir_prefix + model_name, device="gpu" if use_gpu else "cpu")
-
+        # self.llm = GPT4All(model=models_dir_prefix + model_name, device="gpu" if use_gpu else "cpu")
+        self.llm = LlamaCpp(model_path=models_dir_prefix + model_name, temperature=0.7, max_tokens=512, n_ctx=2048, n_threads=6, verbose=False)
         self.chain = LLMChain(llm=self.llm, prompt=prompt, memory=memory)
 
     def get_response(self, dialogue_list):
-        result = self.chain.invoke({"question": dialogue_list[-1]})
-        # print(result)
-        # result_content = self.extract_response(result["chat_history"][-1].content)
-        result_content = result["chat_history"][-1].content
-        return result_content
+        result = self.chain.invoke({"question": dialogue_list[-1]["content"]})
 
-    def extract_response(self, text):
-        start_marker = f"{GIVEN_NAME}: "
-        end_marker = "Human: "
+        # 从 memory 返回中提取 AI 回复
+        for msg in reversed(self.chain.memory.chat_memory.messages):
+            if isinstance(msg, AIMessage):
+                return msg.content
+                # return self.extract_clean_answer(msg.content)
 
-        start_index = text.find(start_marker)
-        if start_index == -1:
-            return text.strip()
+        return ""
 
-        end_index = text.find(end_marker, start_index)
-        if end_index == -1:
-            return text[start_index + len(start_marker):].strip()
-        else:
-            return text[start_index + len(start_marker):end_index].strip()
+    def extract_clean_answer(self, response: str) -> str:
+        """
+        清洗回答内容，去除 <think> 标签及其内容，以及孤立的 <think> 或 </think>。
+        """
+        # 1. 移除成对的 <think>...</think>
+        response = re.sub(r"<think>[\s\S]*?</think>", "", response, flags=re.IGNORECASE)
+
+        # 2. 移除孤立标签
+        response = re.sub(r"[\s\S]*?</?think>", "", response, flags=re.IGNORECASE)
+
+        # 3. 清除多余空行
+        response = re.sub(r"\n\s*\n", "\n\n", response)
+
+        return response.strip()
 
     def reset_memory(self):
-        memory.clear()
+        self.chain.memory.clear()
 
     def exit(self):
-        # if we don't delete the chain and llm objects manually, the memory and GPU memory may not be released
         del self.chain
         del self.llm
 
 
 if __name__ == '__main__':
-    # excecute the chatbot and chat in the terminal
     models_dir_prefix = "../models/"
-
-    model_info_str = "Available models: \n" + ", \n".join([f"{i}: {model}" for i, model in enumerate(os.listdir(models_dir_prefix))])
+    model_info_str = "Available models:\n" + ", \n".join([
+        f"{i}: {model}" for i, model in enumerate(os.listdir(models_dir_prefix))
+    ])
     print(model_info_str)
     chosen_model = int(input("Please choose a model: "))
 
@@ -104,7 +118,7 @@ if __name__ == '__main__':
             chatbot.exit()
             break
 
-        dialogue_list.append(user_input)
+        dialogue_list.append({"role": "user", "content": user_input})
         response = chatbot.get_response(dialogue_list)
         print(f"{GIVEN_NAME}: {response}")
-        dialogue_list.append(response)
+        dialogue_list.append({"role": "assistant", "content": response})
