@@ -1,7 +1,7 @@
 import os
 import re
 import warnings
-from langchain.chains import LLMChain
+from langchain.chains.llm import LLMChain
 from langchain.memory import ConversationBufferMemory
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.prompts import (
@@ -10,7 +10,8 @@ from langchain.prompts import (
     MessagesPlaceholder
 )
 from langchain.schema import AIMessage
-from langchain_community.llms import GPT4All, LlamaCpp
+from langchain_community.llms.gpt4all import GPT4All
+from langchain_community.llms.llamacpp import LlamaCpp
 
 warnings.filterwarnings("ignore")
 
@@ -48,7 +49,7 @@ answer_prompt = ", Answer:\n"
 
 prompt = ChatPromptTemplate.from_messages([
     system_prompt,
-    # MessagesPlaceholder(variable_name="chat_history"),
+    MessagesPlaceholder(variable_name="chat_history"),
     HumanMessagePromptTemplate.from_template("User: {question}\n\n" + answer_prompt)
 ])
 
@@ -61,7 +62,7 @@ class GPT4AllChatbot:
         print("Loading model:", models_dir_prefix + model_name)
 
         # self.llm = GPT4All(model=models_dir_prefix + model_name, device="gpu" if use_gpu else "cpu")
-        self.llm = LlamaCpp(model_path=models_dir_prefix + model_name, temperature=0.7, max_tokens=512, n_ctx=2048, n_threads=6, verbose=False)
+        self.llm = LlamaCpp(model_path=models_dir_prefix + model_name, temperature=0.7, max_tokens=5120, n_ctx=131072, n_threads=6, verbose=False)
         self.chain = LLMChain(llm=self.llm, prompt=prompt, memory=memory)
 
     def get_response(self, dialogue_list):
@@ -70,8 +71,8 @@ class GPT4AllChatbot:
         # 从 memory 返回中提取 AI 回复
         for msg in reversed(self.chain.memory.chat_memory.messages):
             if isinstance(msg, AIMessage):
-                return msg.content
-                # return self.extract_clean_answer(msg.content)
+                # return msg.content
+                return self.extract_clean_answer(msg.content)
 
         return ""
 

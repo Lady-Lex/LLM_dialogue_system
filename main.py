@@ -30,7 +30,7 @@ class WorkThread(QThread):
             self.trigger.emit(response)
         except Exception as e:
             traceback.print_exc()
-            self.trigger.emit("❌ Error: " + str(e))
+            self.trigger.emit("Error: " + str(e))
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -123,7 +123,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.current_model.reset_memory()
 
     def render_dialogue(self, dialogue_list):
-        """格式化显示所有历史对话"""
         return "\n\n".join(
             f"{'User' if msg['role'] == 'user' else 'Bot'}: {msg['content']}"
             for msg in dialogue_list

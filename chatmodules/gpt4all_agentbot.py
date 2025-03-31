@@ -1,4 +1,6 @@
 import os
+import sys
+import re
 import warnings
 import json
 from typing import Any
@@ -11,7 +13,9 @@ from langchain.agents.agent import AgentOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import AIMessage
-from langchain_community.llms import GPT4All, LlamaCpp
+from langchain.schema.agent import AgentAction, AgentFinish
+from langchain_community.llms.gpt4all import GPT4All
+from langchain_community.llms.llamacpp import LlamaCpp
 from tools.get_weather import GetWeatherRun
 from tools.get_time import GetTimeRun
 
@@ -75,20 +79,62 @@ class MyAgentOutputParser(AgentOutputParser):
         return FORMAT_INSTRUCTIONS_CHINESE
 
     def parse(self, text: str) -> Any:
-        cleaned_output = text.strip()
-        if "```json" in cleaned_output:
-            _, cleaned_output = cleaned_output.split("```json")
-        if "```" in cleaned_output:
-            cleaned_output, _ = cleaned_output.split("```")
-        if cleaned_output.startswith("```json"):
-            cleaned_output = cleaned_output[len("```json") :]
-        if cleaned_output.startswith("```"):
-            cleaned_output = cleaned_output[len("```") :]
-        if cleaned_output.endswith("```"):
-            cleaned_output = cleaned_output[: -len("```")]
-        cleaned_output = cleaned_output.strip()
-        response = json.loads(cleaned_output)
-        return {"action": response["action"], "action_input": response["action_input"]}
+        def extract_clean_answer(response: str) -> str:
+            print("response before removing <think> tags:", response)
+            """
+            清洗回答内容，去除 <think> 标签及其内容，以及孤立的 <think> 或 </think>。
+            然后尝试提取最后一个 ```json ... ``` 块作为有效 JSON。
+            """
+            # 1. 移除成对的 <think>...</think>
+            response = re.sub(r"<think>[\s\S]*?</think>", "", response, flags=re.IGNORECASE)
+
+            # 2. 移除孤立标签
+            response = re.sub(r"[\s\S]*?</?think>", "", response, flags=re.IGNORECASE)
+
+            # 3. 清除多余空行
+            response = re.sub(r"\n\s*\n", "\n\n", response)
+
+            print("response after removing <think> tags:", response)
+
+            # 提取所有 ```json ... ``` 块，取最后一个
+            json_blocks = re.findall(r"```json(.*?)```", response, re.DOTALL)
+            if json_blocks:
+                return json_blocks[-1].strip()
+            else:
+                # fallback：尝试提取一般 JSON 块（不带 markdown）
+                json_candidates = re.findall(r"\{[\s\S]*?\}", response)
+                return json_candidates[-1].strip() if json_candidates else ""
+
+        # 打印调试（可选）
+        # print("==== Full LLM Output ====")
+        # print(text)
+
+        cleaned_output = extract_clean_answer(text)
+
+        if not cleaned_output:
+            raise ValueError("清理后输出为空，无法解析 JSON。")
+
+        try:
+            response = json.loads(cleaned_output)
+        except Exception as e:
+            print("❌ JSON 解析失败，内容如下：\n", cleaned_output)
+            raise e
+
+        action = response.get("action")
+        action_input = response.get("action_input")
+
+        if action == "Final Answer":
+            return AgentFinish(
+                return_values={"output": action_input},
+                log=text
+            )
+        else:
+            return AgentAction(
+                tool=action,
+                tool_input=action_input,
+                log=text
+            )
+
 
 # ============================
 # Main Agent Chatbot Class
@@ -100,7 +146,7 @@ class GPT4AllAgentbot:
         print("Loading model:", models_dir_prefix + model_name)
 
         # self.llm = GPT4All(model=models_dir_prefix + model_name, device="gpu" if use_gpu else "cpu")
-        self.llm = LlamaCpp(model_path=models_dir_prefix + model_name, temperature=0.7, max_tokens=512, n_ctx=2048, n_threads=6, verbose=False)
+        self.llm = LlamaCpp(model_path=models_dir_prefix + model_name, temperature=0.7, max_tokens=5120, n_ctx=131072, n_threads=6, verbose=False)
         
         self.gettimetool = GetTimeRun()
         self.getweathertool = GetWeatherRun()
@@ -132,19 +178,10 @@ class GPT4AllAgentbot:
                                                                  verbose=True, 
                                                                  memory=self.memory)
 
-        # self.agent_executor: AgentExecutor = initialize_agent(
-        #     tools=[self.weather_tool, self.time_tool],
-        #     llm=self.llm,
-        #     agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-        #     verbose=True,
-        #     handle_parsing_errors=True,
-        #     output_parser=MyAgentOutputParser()
-        # )
-
     def get_response(self, dialogue_list):
         latest_msg = dialogue_list[-1]["content"]
         return self.agent_executor.run(latest_msg)
-
+    
     def exit(self):
         del self.agent_executor
         del self.llm
@@ -152,6 +189,10 @@ class GPT4AllAgentbot:
 
 if __name__ == '__main__':
     import traceback
+
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    from tools.get_weather import GetWeatherRun
+    from tools.get_time import GetTimeRun
 
     models_dir_prefix = "../models/"
     model_info_str = "Available models:\n" + ", \n".join([
@@ -174,11 +215,11 @@ if __name__ == '__main__':
                 break
 
             dialogue_list.append({"role": "user", "content": user_input})
-            print("\n🤖 Thinking...")
+            print("\nThinking...")
             response = chatbot.get_response(dialogue_list)
             print(f"{GIVEN_NAME}: {response}")
             dialogue_list.append({"role": "assistant", "content": response})
 
         except Exception as e:
-            print("\n🚨 Exception occurred:")
+            print("\nException occurred:")
             traceback.print_exc()
